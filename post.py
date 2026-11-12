@@ -190,7 +190,14 @@ def drive_find(key, parent, name):
         "q": f"'{parent}' in parents and name = '{name}' and trashed = false",
         "fields": "files(id,name)", "key": key,
         "supportsAllDrives": "true", "includeItemsFromAllDrives": "true"}, timeout=60)
-    r.raise_for_status()
+    if r.status_code != 200:
+        try:
+            err = r.json().get("error", {})
+            msg = err.get("message", "")
+            reason = ",".join(e.get("reason", "") for e in err.get("errors", []))
+        except ValueError:
+            msg, reason = r.text[:300], ""
+        sys.exit(f"Google Drive API error {r.status_code} ({reason}): {msg}")
     files = r.json().get("files", [])
     return files[0]["id"] if files else None
 
