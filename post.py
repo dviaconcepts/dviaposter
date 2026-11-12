@@ -185,10 +185,23 @@ DRIVE = "https://www.googleapis.com/drive/v3/files"
 EAT = dt.timezone(dt.timedelta(hours=3))
 
 
-def drive_find(key, parent, name):
-    r = requests.get(DRIVE, params={
+def drive_auth():
+    """Prefer the Google login (refresh token with drive.readonly); fall back to an API key."""
+    if all(env(s) for s in ("YT_CLIENT_ID", "YT_CLIENT_SECRET", "YT_REFRESH_TOKEN")):
+        r = requests.post("https://oauth2.googleapis.com/token", data={
+            "client_id": env("YT_CLIENT_ID"), "client_secret": env("YT_CLIENT_SECRET"),
+            "refresh_token": env("YT_REFRESH_TOKEN"), "grant_type": "refresh_token"}, timeout=60).json()
+        if "drive" in r.get("scope", "") and r.get("access_token"):
+            return {"headers": {"Authorization": "Bearer " + r["access_token"]}, "params": {}}
+    if env("DRIVE_API_KEY"):
+        return {"headers": {}, "params": {"key": env("DRIVE_API_KEY")}}
+    sys.exit("No Drive access: add drive.readonly to the Google login (YT_REFRESH_TOKEN) or set DRIVE_API_KEY")
+
+
+def drive_find(auth, parent, name):
+    r = requests.get(DRIVE, headers=auth["headers"], params={
         "q": f"'{parent}' in parents and name = '{name}' and trashed = false",
-        "fields": "files(id,name)", "key": key,
+        "fields": "files(id,name)", **auth["params"],
         "supportsAllDrives": "true", "includeItemsFromAllDrives": "true"}, timeout=60)
     if r.status_code != 200:
         try:
@@ -205,18 +218,20 @@ def drive_find(key, parent, name):
 def load_queue():
     """Posts from queue.json in today's and yesterday's dated Drive folders
     (Dvia Daily Ads/<YYYY-MM-DD>/queue.json). Falls back to a single QUEUE_URL."""
-    key, folder = env("DRIVE_API_KEY"), env("DRIVE_FOLDER_ID")
-    if key and folder:
+    folder = env("DRIVE_FOLDER_ID")
+    if folder:
+        auth = drive_auth()
         posts = []
         today = now_utc().astimezone(EAT).date()
         for d in (today - dt.timedelta(days=1), today):
-            day_id = drive_find(key, folder, d.isoformat())
+            day_id = drive_find(auth, folder, d.isoformat())
             if not day_id:
                 continue
-            qid = drive_find(key, day_id, "queue.json")
+            qid = drive_find(auth, day_id, "queue.json")
             if not qid:
                 continue
-            r = requests.get(f"{DRIVE}/{qid}", params={"alt": "media", "key": key}, timeout=60)
+            r = requests.get(f"{DRIVE}/{qid}", headers=auth["headers"],
+                             params={"alt": "media", **auth["params"]}, timeout=60)
             r.raise_for_status()
             posts += r.json().get("posts", [])
             print(f"queue {d}: {len(r.json().get('posts', []))} post(s)")
