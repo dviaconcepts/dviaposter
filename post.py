@@ -181,13 +181,49 @@ PLATFORMS = {
 }
 
 
-def main():
+DRIVE = "https://www.googleapis.com/drive/v3/files"
+EAT = dt.timezone(dt.timedelta(hours=3))
+
+
+def drive_find(key, parent, name):
+    r = requests.get(DRIVE, params={
+        "q": f"'{parent}' in parents and name = '{name}' and trashed = false",
+        "fields": "files(id,name)", "key": key,
+        "supportsAllDrives": "true", "includeItemsFromAllDrives": "true"}, timeout=60)
+    r.raise_for_status()
+    files = r.json().get("files", [])
+    return files[0]["id"] if files else None
+
+
+def load_queue():
+    """Posts from queue.json in today's and yesterday's dated Drive folders
+    (Dvia Daily Ads/<YYYY-MM-DD>/queue.json). Falls back to a single QUEUE_URL."""
+    key, folder = env("DRIVE_API_KEY"), env("DRIVE_FOLDER_ID")
+    if key and folder:
+        posts = []
+        today = now_utc().astimezone(EAT).date()
+        for d in (today - dt.timedelta(days=1), today):
+            day_id = drive_find(key, folder, d.isoformat())
+            if not day_id:
+                continue
+            qid = drive_find(key, day_id, "queue.json")
+            if not qid:
+                continue
+            r = requests.get(f"{DRIVE}/{qid}", params={"alt": "media", "key": key}, timeout=60)
+            r.raise_for_status()
+            posts += r.json().get("posts", [])
+            print(f"queue {d}: {len(r.json().get('posts', []))} post(s)")
+        return posts
     qurl = env("QUEUE_URL")
     if not qurl:
-        sys.exit("QUEUE_URL secret is not set")
-    queue = requests.get(qurl, timeout=60)
-    queue.raise_for_status()
-    posts = queue.json().get("posts", [])
+        sys.exit("Set DRIVE_API_KEY + DRIVE_FOLDER_ID (or QUEUE_URL) secrets")
+    r = requests.get(qurl, timeout=60)
+    r.raise_for_status()
+    return r.json().get("posts", [])
+
+
+def main():
+    posts = load_queue()
     log = load_log()
     now = now_utc()
     failures = 0
