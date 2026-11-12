@@ -1,0 +1,41 @@
+name: Post due ads
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"   # every 15 minutes (GitHub may delay runs a few minutes)
+  workflow_dispatch: {}       # "Run workflow" button for testing
+
+permissions:
+  contents: write             # lets the bot commit log/posted.json
+
+concurrency:
+  group: poster
+  cancel-in-progress: false
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Post
+        env:
+          QUEUE_URL: ${{ secrets.QUEUE_URL }}
+          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
+          FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+          YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+          DRY_RUN: ${{ vars.DRY_RUN }}
+        run: python post.py
+      - name: Save log
+        run: |
+          git config user.name "dvia-poster"
+          git config user.email "dvia-poster@users.noreply.github.com"
+          git add log/posted.json
+          git diff --cached --quiet || (git commit -m "post log $(date -u +%FT%TZ)" && git push)
