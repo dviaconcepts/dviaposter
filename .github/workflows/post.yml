@@ -25,6 +25,8 @@ jobs:
       - name: Post
         env:
           QUEUE_URL: ${{ secrets.QUEUE_URL }}
+                       DRIVE_API_KEY: ${{ secrets.DRIVE_API_KEY }}
+             DRIVE_FOLDER_ID: ${{ secrets.DRIVE_FOLDER_ID }}
           FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
           FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
           IG_USER_ID: ${{ secrets.IG_USER_ID }}
